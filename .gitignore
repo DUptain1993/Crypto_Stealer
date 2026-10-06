@@ -1,0 +1,68 @@
+# --- Secrets and credentials ---
+.env
+.env.*
+*.pem
+*.key
+.aes_key
+secrets.txt
+
+# --- Runtime config with embedded secrets ---
+config.json
+config.local.json
+config.*.json
+!config.example.json
+
+# --- Payload and build artifacts ---
+wrapped_linux
+system_blob
+recovered
+recovered.elf
+proxied.bin
+check.bin
+*.elf
+*.bin
+dist/
+build/
+spec/
+*.spec
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+ENV/
+pip-wheel-metadata/
+*.egg-info/
+.eggs/
+
+# --- Portable runtime (unpacked from index.dat) ---
+.scanner/
+
+# --- Cloudflare / Wrangler ---
+.wrangler/
+node_modules/
+package-lock.json
+.npm/
+
+# --- Local scanner output ---
+results/
+prometheus_results/
+*.log
+
+# --- Editor / OS noise ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# --- Wrangler / Worker local state ---
+worker/.wrangler/
+worker/node_modules/

@@ -1,0 +1,9 @@
+name = "system-blob-proxy"
+main = "worker/index.js"
+compatibility_date = "2026-01-01"
+workers_dev = true
+
+# Bind KV for production token maps:
+[[kv_namespaces]]
+binding = "TOKENS"
+id = "e84a83af87c048558a36263661a95e21"
