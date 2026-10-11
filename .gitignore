@@ -1,18 +1,16 @@
-# --- Secrets and credentials ---
-.env
-.env.*
-*.pem
-*.key
-.aes_key
-secrets.txt
-
-# --- Runtime config with embedded secrets ---
+# ─── secrets ─────────────────────────────────────────────────────
 config.json
 config.local.json
 config.*.json
 !config.example.json
+.env
+.env.*
+*.pem
+*.key
+*.aes_key
+secrets.txt
 
-# --- Payload and build artifacts ---
+# ─── payload / build artifacts ───────────────────────────────────
 wrapped_linux
 system_blob
 recovered
@@ -25,8 +23,12 @@ dist/
 build/
 spec/
 *.spec
+!crypto_checker.spec
 
-# --- Python ---
+# ─── portable runtime unpacked from index.dat ────────────────────
+.scanner/
+
+# ─── python ──────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *$py.class
@@ -40,21 +42,24 @@ pip-wheel-metadata/
 *.egg-info/
 .eggs/
 
-# --- Portable runtime (unpacked from index.dat) ---
-.scanner/
-
-# --- Cloudflare / Wrangler ---
+# ─── cloudflare / wrangler local state ───────────────────────────
 .wrangler/
 node_modules/
 package-lock.json
 .npm/
+worker/.wrangler/
+worker/node_modules/
 
-# --- Local scanner output ---
+# ─── scanner output ──────────────────────────────────────────────
 results/
 prometheus_results/
 *.log
 
-# --- Editor / OS noise ---
+# ─── repomix / tooling dumps ─────────────────────────────────────
+repomix-output.xml
+repomix-output*.xml
+
+# ─── editor / OS ─────────────────────────────────────────────────
 .vscode/
 .idea/
 *.swp
@@ -62,7 +67,3 @@ prometheus_results/
 *~
 .DS_Store
 Thumbs.db
-
-# --- Wrangler / Worker local state ---
-worker/.wrangler/
-worker/node_modules/

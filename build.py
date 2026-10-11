@@ -1,48 +1,62 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Application builder — packages the Linux binary."""
+"""Application builder — packages the Linux binary via PyInstaller spec."""
 
-import os
-import sys
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = BASE_DIR / "dist"
-OUTPUT_DIR.mkdir(exist_ok=True)
-
-SEP = os.pathsep
+BUILD_DIR = BASE_DIR / "build"
+SPEC_FILE = BASE_DIR / "crypto_checker.spec"
 
 
 def build_application() -> bool:
-    main_py = BASE_DIR / "main.py"
-    if not main_py.exists():
+    if not (BASE_DIR / "main.py").exists():
         print("main.py not found.")
         return False
+    if not SPEC_FILE.exists():
+        print(f"spec file not found: {SPEC_FILE}")
+        return False
+
+    # Fresh work dir. Keep dist/ so we can compare sizes if desired,
+    # but wipe on failure paths via shutil below when needed.
+    if BUILD_DIR.exists():
+        shutil.rmtree(BUILD_DIR, ignore_errors=True)
+    OUTPUT_DIR.mkdir(exist_ok=True)
 
     cmd = [
         sys.executable, "-m", "PyInstaller",
-        "--onefile",
-        "--name", "crypto_checker",
+        "--noconfirm",
+        "--clean",
+        "--log-level", "INFO",
         "--distpath", str(OUTPUT_DIR),
-        "--workpath", str(BASE_DIR / "build"),
-        "--specpath", str(BASE_DIR / "spec"),
-        "--add-data", f"actions{SEP}actions",
-        "--add-data", f"scanner{SEP}scanner",
-        "--add-data", f"config.json{SEP}.",
-        "--hidden-import", "cryptography",
-        "--hidden-import", "requests",
-        "--hidden-import", "psutil",
-        "--exclude-module", "tkinter",
-        "--exclude-module", "test",
-        "--strip",
-        str(main_py),
+        "--workpath", str(BUILD_DIR),
+        str(SPEC_FILE),
     ]
 
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+    print("=" * 60)
+    print("Application Builder — Linux Edition")
+    print("=" * 60)
+    print(f"Python:   {sys.version.split()[0]}")
+    print(f"Base:     {BASE_DIR}")
+    print(f"Spec:     {SPEC_FILE}")
+    print(f"Dist:     {OUTPUT_DIR}")
+    print(f"Work:     {BUILD_DIR}")
+    print(f"Cmd:      {' '.join(str(c) for c in cmd)}")
+    print("=" * 60)
+    print()
+
+    try:
+        result = subprocess.run(cmd, cwd=str(BASE_DIR))
+    except KeyboardInterrupt:
+        print("\nBuild interrupted.")
+        return False
+
     if result.returncode != 0:
-        print("Build failed.")
-        print(result.stderr[-1000:])
+        print(f"PyInstaller exited with code {result.returncode}")
         return False
 
     exe = OUTPUT_DIR / "crypto_checker"
@@ -50,18 +64,27 @@ def build_application() -> bool:
         print("Binary missing after build.")
         return False
 
-    size = exe.stat().st_size / (1024 * 1024)
-    print(f"Built: {exe} ({size:.2f} MB)")
+    size_mb = exe.stat().st_size / (1024 * 1024)
+    print()
+    print("=" * 60)
+    print(f"Built: {exe} ({size_mb:.2f} MB)")
+    print("=" * 60)
     return True
 
 
 def main():
-    print("=" * 60)
-    print("Application Builder — Linux Edition")
-    print("=" * 60)
     ok = build_application()
-    print("=" * 60)
-    print("Done." if ok else "Build unsuccessful.")
+    print()
+    if ok:
+        print("Done.")
+    else:
+        print("Build unsuccessful.")
+        print()
+        print("If PyInstaller hangs, try a Python 3.12 or 3.13 venv:")
+        print("    python3.13 -m venv .venv")
+        print("    source .venv/bin/activate")
+        print("    pip install -r requirements.txt pyinstaller")
+        print("    python build.py")
 
 
 if __name__ == "__main__":
