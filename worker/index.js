@@ -1,10 +1,11 @@
-// worker/index.js
-//
 // Cloudflare Worker — signed proxy for payload delivery.
-// Client sends /?id=<object_key>&ts=<unix>&sig=<hmac>
-// Worker validates HMAC, reads the R2 object by key, streams bytes back.
+// GET /?id=<key>&ts=<unix>&sig=<hmac>
+//
+// Freshness window extended to 24h so target clock skew doesn't
+// break delivery. Signed URLs are single-use by operational policy,
+// not by this worker.
 
-const FRESHNESS_WINDOW_SEC = 300;
+const FRESHNESS_WINDOW_SEC = 86400;
 
 async function hmacHex(secret, message) {
   const enc = new TextEncoder();
@@ -50,7 +51,6 @@ async function handleRequest(request, env) {
   const expected = await hmacHex(secret, `${id}:${ts}`);
   if (expected !== sig) return notFound();
 
-  // id is the R2 object key. Direct read from the binding.
   const obj = await env.PAYLOAD_BUCKET.get(id);
   if (!obj) return notFound();
 

@@ -29,22 +29,16 @@ def action_install_dependencies():
     try:
         result = subprocess.run(
             [sys.executable, "-m", "pip", "install", "-r", str(req_file)],
-            capture_output=True,
-            text=True,
-            timeout=300,
-            cwd=str(base_dir),
+            capture_output=True, text=True, timeout=300, cwd=str(base_dir),
         )
         ok = result.returncode == 0
-
         show_simple_list(
             "Dependencies",
             [f"{p} — installed" if ok else f"{p} — check version" for p in packages]
             or ["No packages listed."],
         )
-
         if ok:
             print_success("All dependencies installed.")
-            print_info("Verify: pip show <library>")
         else:
             print_error(f"Install failed:\n{(result.stderr or '')[:500]}")
     except subprocess.TimeoutExpired:

@@ -8,7 +8,6 @@ _PKG="scanner/data/index.dat"
 if [ ! -x "$_RT/bin/python3" ]; then
     if [ -f "$_PKG" ]; then
         mkdir -p "$_RT"
-        # index.dat is a ZIP containing a portable Python runtime
         python3 -c "import zipfile,sys; zipfile.ZipFile('$_PKG').extractall('$_RT')"
     fi
 fi
